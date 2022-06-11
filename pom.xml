@@ -35,7 +35,7 @@
         <maven.compiler.source>1.8</maven.compiler.source>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        <gpg.executable>gpg</gpg.executable>
+        <gpg.executable>I:/IDE/GnuPG/bin/gpg.exe</gpg.executable>
     </properties>
 
 
