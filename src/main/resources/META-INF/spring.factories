@@ -1,0 +1,1 @@
+org.springframework.boot.autoconfigure.EnableAutoConfiguration=com.neko233.hotdeploy.helper.SpringHotUpdateHelper
