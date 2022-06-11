@@ -2,6 +2,10 @@
 
 Spring Boot - Hot Update.
 
+# 1. Pre-Step
+Update your JAR and same path like before.
+
+# 2. Dependency 
 ## Maven
 ```xml
 <dependency>
