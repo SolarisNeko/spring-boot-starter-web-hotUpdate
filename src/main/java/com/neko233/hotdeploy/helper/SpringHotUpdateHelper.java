@@ -1,9 +1,13 @@
 package com.neko233.hotdeploy.helper;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.config.BeanDefinition;
@@ -12,6 +16,8 @@ import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
 import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.context.support.AbstractApplicationContext;
+import org.springframework.context.support.GenericApplicationContext;
 import org.springframework.util.ClassUtils;
 import org.springframework.util.ReflectionUtils;
 import org.springframework.web.servlet.mvc.method.RequestMappingInfo;
@@ -38,6 +44,12 @@ public class SpringHotUpdateHelper implements ApplicationContextAware {
     public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
         this.applicationContext = (ConfigurableApplicationContext) applicationContext;
         this.beanFactory = (DefaultListableBeanFactory) this.applicationContext.getBeanFactory();
+
+        String[] beanDefinitionNames = beanFactory.getBeanDefinitionNames();
+        Set<String> names = Arrays.stream(beanDefinitionNames)
+                .filter(name -> name.startsWith("com.neko233"))
+                .collect(Collectors.toSet());
+        System.out.println(names);
     }
 
 
@@ -155,4 +167,46 @@ public class SpringHotUpdateHelper implements ApplicationContextAware {
     }
 
 
+    public void refreshAllContext(String prefixClassPath)
+            throws NoSuchFieldException, IllegalAccessException, NoSuchMethodException, InvocationTargetException, ClassNotFoundException {
+        Field refreshed = GenericApplicationContext.class.getDeclaredField("refreshed");
+        refreshed.setAccessible(true);
+        refreshed.set(applicationContext, new AtomicBoolean(false));
+
+        Method refreshBeanFactory = AbstractApplicationContext.class.getDeclaredMethod("refreshBeanFactory");
+        refreshBeanFactory.setAccessible(true);
+        AbstractApplicationContext abstractContext = (AbstractApplicationContext) applicationContext;
+        refreshBeanFactory.invoke(abstractContext);
+
+        beanFactory = (DefaultListableBeanFactory) abstractContext.getBeanFactory();
+
+        String[] beanDefinitionNames = beanFactory.getBeanDefinitionNames();
+        for (String beanDefinitionName : beanDefinitionNames) {
+            if (beanDefinitionName.startsWith(prefixClassPath)) {
+                unregisterController(beanDefinitionName);
+                registerController(beanDefinitionName);
+            }
+        }
+    }
+
+    @Deprecated
+    public void oldRefreshAll() throws NoSuchFieldException, IllegalAccessException, NoSuchMethodException {
+        Field refreshed = GenericApplicationContext.class.getDeclaredField("refreshed");
+        refreshed.setAccessible(true);
+        refreshed.set(applicationContext, new AtomicBoolean(false));
+
+        beanFactory.destroySingletons();
+//        System.out.println(beanFactory.hashCode());
+
+        Field applicationContextBeanFactory = GenericApplicationContext.class.getDeclaredField("beanFactory");
+        applicationContextBeanFactory.setAccessible(true);
+        DefaultListableBeanFactory newBeanFactory = new DefaultListableBeanFactory();
+        applicationContextBeanFactory.set(applicationContext, newBeanFactory);
+
+        Method onRefreshWebServer = GenericApplicationContext.class.getDeclaredMethod("onRefresh");
+        onRefreshWebServer.setAccessible(true);
+
+        beanFactory = newBeanFactory;
+        applicationContext.refresh();
+    }
 }
