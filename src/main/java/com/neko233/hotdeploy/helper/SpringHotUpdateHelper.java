@@ -1,13 +1,15 @@
 package com.neko233.hotdeploy.helper;
 
-import java.lang.reflect.Field;
+import java.io.IOException;
+import java.lang.annotation.Annotation;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Set;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
+
+import com.neko233.hotdeploy.scanner.SimplePackageScanner;
+import com.neko233.hotdeploy.util.SplitUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.config.BeanDefinition;
@@ -16,10 +18,14 @@ import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
 import org.springframework.context.ConfigurableApplicationContext;
-import org.springframework.context.support.AbstractApplicationContext;
-import org.springframework.context.support.GenericApplicationContext;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Controller;
+import org.springframework.stereotype.Repository;
+import org.springframework.stereotype.Service;
 import org.springframework.util.ClassUtils;
 import org.springframework.util.ReflectionUtils;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.RequestMappingInfo;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 
@@ -44,24 +50,18 @@ public class SpringHotUpdateHelper implements ApplicationContextAware {
     public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
         this.applicationContext = (ConfigurableApplicationContext) applicationContext;
         this.beanFactory = (DefaultListableBeanFactory) this.applicationContext.getBeanFactory();
-
-        String[] beanDefinitionNames = beanFactory.getBeanDefinitionNames();
-        Set<String> names = Arrays.stream(beanDefinitionNames)
-                .filter(name -> name.startsWith("com.neko233"))
-                .collect(Collectors.toSet());
-        System.out.println(names);
     }
 
 
     public void refreshBeanByClassName(String className) throws ClassNotFoundException {
-        unregisterBean(className);
-        registerBean(className);
+        unregisterBean(SplitUtil.getBeanNameByClassName(className));
+        registerBean(SplitUtil.getBeanNameByClassName(className));
     }
 
     public void refreshControllerByClassName(String className)
             throws ClassNotFoundException, InvocationTargetException, NoSuchMethodException, IllegalAccessException {
-        unregisterController(className);
-        registerController(className);
+        unregisterController(SplitUtil.getBeanNameByClassName(className));
+        registerController(SplitUtil.getBeanNameByClassName(className));
     }
 
 
@@ -74,7 +74,7 @@ public class SpringHotUpdateHelper implements ApplicationContextAware {
         BeanDefinitionBuilder beanDefinitionBuilder = BeanDefinitionBuilder.genericBeanDefinition(toLoadClass);
         BeanDefinition newBeanDefinition = beanDefinitionBuilder.getRawBeanDefinition();
         newBeanDefinition.setScope("singleton");
-        beanFactory.registerBeanDefinition(className, newBeanDefinition);
+        beanFactory.registerBeanDefinition(SplitUtil.getBeanNameByClassName(className), newBeanDefinition);
     }
 
 
@@ -84,7 +84,7 @@ public class SpringHotUpdateHelper implements ApplicationContextAware {
      * @param className 作为 beanName
      */
     public void unregisterBean(String className) {
-        beanFactory.removeBeanDefinition(className);
+        beanFactory.removeBeanDefinition(SplitUtil.getBeanNameByClassName(className));
     }
 
 
@@ -117,7 +117,7 @@ public class SpringHotUpdateHelper implements ApplicationContextAware {
     public void registerController(String className)
             throws ClassNotFoundException, NoSuchMethodException, InvocationTargetException, IllegalAccessException {
 
-        registerBean(className);
+        registerBean(SplitUtil.getBeanNameByClassName(className));
 
         RequestMappingHandlerMapping requestMappingHandlerMapping = applicationContext.getBean(
                 RequestMappingHandlerMapping.class);
@@ -128,7 +128,7 @@ public class SpringHotUpdateHelper implements ApplicationContextAware {
                 .getSuperclass()
                 .getDeclaredMethod("detectHandlerMethods", Object.class);
         detectHandlerMethod.setAccessible(true);
-        detectHandlerMethod.invoke(requestMappingHandlerMapping, className);
+        detectHandlerMethod.invoke(requestMappingHandlerMapping, SplitUtil.getBeanNameByClassName(className));
     }
 
 
@@ -141,7 +141,7 @@ public class SpringHotUpdateHelper implements ApplicationContextAware {
         // request Mapping Handler store the Route for @RequestMapping : Handler
         final RequestMappingHandlerMapping requestMappingHandlerMapping =
                 (RequestMappingHandlerMapping) applicationContext.getBean("requestMappingHandlerMapping");
-        Object controller = applicationContext.getBean(className);
+        Object controller = applicationContext.getBean(SplitUtil.getBeanNameByClassName(className));
 
         final Class<?> targetClass = controller.getClass();
         ReflectionUtils.doWithMethods(targetClass, method -> {
@@ -163,50 +163,68 @@ public class SpringHotUpdateHelper implements ApplicationContextAware {
             }
         }, ReflectionUtils.USER_DECLARED_METHODS);
 
-        unregisterBean(className);
+        unregisterBean(SplitUtil.getBeanNameByClassName(className));
     }
 
+    /**
+     * refresh all user define class BeanDefinition
+     * @return ok ?
+     */
 
-    public void refreshAllContext(String prefixClassPath)
-            throws NoSuchFieldException, IllegalAccessException, NoSuchMethodException, InvocationTargetException, ClassNotFoundException {
-        Field refreshed = GenericApplicationContext.class.getDeclaredField("refreshed");
-        refreshed.setAccessible(true);
-        refreshed.set(applicationContext, new AtomicBoolean(false));
+    public boolean refreshAllUserBeanDefinition() {
+        boolean isOk = true;
+        List<Class> allClassList = null;
+        try {
+            allClassList = SimplePackageScanner.getAllClasses();
+        } catch (IOException e) {
+            e.printStackTrace();
+            isOk = false;
+        }
 
-        Method refreshBeanFactory = AbstractApplicationContext.class.getDeclaredMethod("refreshBeanFactory");
-        refreshBeanFactory.setAccessible(true);
-        AbstractApplicationContext abstractContext = (AbstractApplicationContext) applicationContext;
-        refreshBeanFactory.invoke(abstractContext);
+        if (allClassList == null || allClassList.size() == 0) {
+            return false;
+        }
 
-        beanFactory = (DefaultListableBeanFactory) abstractContext.getBeanFactory();
+        List<String> allClassPathList = allClassList.stream()
+                .filter(aClass -> {
+                    if (aClass.getAnnotation(Component.class) != null) {
+                        return true;
+                    }
+                    if (aClass.getAnnotation(Configuration.class) != null) {
+                        return true;
+                    }
+                    if (aClass.getAnnotation(Repository.class) != null) {
+                        return true;
+                    }
+                    if (aClass.getAnnotation(Service.class) != null) {
+                        return true;
+                    }
+                    if (aClass.getAnnotation(Controller.class) != null) {
+                        return true;
+                    }
+                    if (aClass.getAnnotation(RestController.class) != null) {
+                        return true;
+                    }
+                    return false;
+                })
+                .map(Class::getName)
+                .collect(Collectors.toList());
 
-        String[] beanDefinitionNames = beanFactory.getBeanDefinitionNames();
-        for (String beanDefinitionName : beanDefinitionNames) {
-            if (beanDefinitionName.startsWith(prefixClassPath)) {
-                unregisterController(beanDefinitionName);
-                registerController(beanDefinitionName);
+        if (allClassPathList.size() == 0) {
+            return false;
+        }
+
+        for (String classPath : allClassPathList) {
+            unregisterBean(classPath);
+            try {
+                registerBean(classPath);
+            } catch (ClassNotFoundException e) {
+                e.printStackTrace();
+                isOk = false;
             }
         }
+        return isOk;
     }
 
-    @Deprecated
-    public void oldRefreshAll() throws NoSuchFieldException, IllegalAccessException, NoSuchMethodException {
-        Field refreshed = GenericApplicationContext.class.getDeclaredField("refreshed");
-        refreshed.setAccessible(true);
-        refreshed.set(applicationContext, new AtomicBoolean(false));
 
-        beanFactory.destroySingletons();
-//        System.out.println(beanFactory.hashCode());
-
-        Field applicationContextBeanFactory = GenericApplicationContext.class.getDeclaredField("beanFactory");
-        applicationContextBeanFactory.setAccessible(true);
-        DefaultListableBeanFactory newBeanFactory = new DefaultListableBeanFactory();
-        applicationContextBeanFactory.set(applicationContext, newBeanFactory);
-
-        Method onRefreshWebServer = GenericApplicationContext.class.getDeclaredMethod("onRefresh");
-        onRefreshWebServer.setAccessible(true);
-
-        beanFactory = newBeanFactory;
-        applicationContext.refresh();
-    }
 }

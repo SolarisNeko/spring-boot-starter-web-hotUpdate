@@ -12,7 +12,7 @@
 
     <groupId>com.neko233</groupId>
     <artifactId>spring-boot-starter-web-hotUpdate</artifactId>
-    <version>0.0.1</version>
+    <version>0.0.2</version>
 
     <name>spring-boot-starter-web-hotUpdate</name>
     <description>spring-boot-starter-web-hotUpdate 热更新</description>
