@@ -30,14 +30,4 @@ public class HotUpdate {
     }
 
 
-    @RequestMapping("/updateAll")
-    public String updateAll(@RequestBody HotUpdateJson json) {
-        try {
-            springHotUpdateHelper.refreshAllContext(json.getClassPrefix());
-        } catch (ClassNotFoundException | NoSuchFieldException | IllegalAccessException | NoSuchMethodException |
-                 InvocationTargetException e) {
-            return "refresh error. e = " + e;
-        }
-        return "done";
-    }
 }

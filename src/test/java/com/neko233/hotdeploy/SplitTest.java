@@ -21,6 +21,6 @@ public class SplitTest {
     public void splitOneMoreComma() {
         String demo = "com.neko233.App";
         String result = SplitUtil.getBeanNameByClassName(demo);
-        Assertions.assertEquals("App", result);
+        Assertions.assertEquals("app", result);
     }
 }
