@@ -52,6 +52,10 @@ public class SimplePackageScanner {
 
             File directory = new File(url.getFile());
 
+            if (directory.getAbsolutePath().contains("test-classes")) {
+                continue;
+            }
+
             // recursive add class
             if (directory.isDirectory()) {
                 List<String> classes = recursiveFindClasses(directory);
@@ -61,7 +65,10 @@ public class SimplePackageScanner {
                         .map(fileName -> fileName.substring(prefixLength + 1))
                         // murder '.class'
                         .map(fileName -> fileName.substring(0, fileName.length() - 6))
+                        // Unix / Linux
                         .map(fileName -> fileName.replaceAll("\\/", "."))
+                        // Windows
+                        .map(fileName -> fileName.replaceAll("\\\\", "."))
                         .collect(Collectors.toList());
                 fileNameList.addAll(filterPrefixClassFileName);
             }
